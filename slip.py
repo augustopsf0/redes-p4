@@ -1,4 +1,5 @@
 class CamadaEnlace:
+
     ignore_checksum = False
 
     def __init__(self, linhas_seriais):
@@ -40,9 +41,18 @@ class CamadaEnlace:
 
 
 class Enlace:
+
+    # SLIP: camada de enlace mais simples, pois não envolve nem endereçamento nem controle de acesso ao meio, pois é feito para um enlace ponto a
+        # ponto (só envolve duas pontas, chamadas de A e B)
+        # A pode transmitir ao mesmo tempo que B sem colisão, pois é full duplex (tem-se dois fios independentes)
+        # Não precisa de endereçamento pois se o A estiver transmitindo e o B estiver recebendo sabe-se que só pode ser o A que está transmitindo e vice-versa,
+             # sempre sabe-se de onde está vindo, não precisa de um endereço dentro do quadro
+    # Linha serial é um fluxo de bytes continuo, por isso, tem um but final e inicial para delimitar o inicio e fim do pacote
+
     def __init__(self, linha_serial):
         self.linha_serial = linha_serial
         self.linha_serial.registrar_recebedor(self.__raw_recv)
+        self.fluxo = b''
 
     def registrar_recebedor(self, callback):
         self.callback = callback
@@ -53,7 +63,7 @@ class Enlace:
         # sequências especiais, de acordo com o protocolo CamadaEnlace (RFC 1055).
         datagrama = datagrama.replace(b'\xdb', b'\xdb\xdd')
         datagrama = datagrama.replace(b'\xc0', b'\xdb\xdc')
-        datagrama = b'\xc0' + datagrama + b'\xc0'
+        datagrama = b'\xc0' + datagrama + b'\xc0' # datagrama é uma sequencia de bytes
         self.linha_serial.enviar(datagrama)
         pass
 
@@ -65,4 +75,26 @@ class Enlace:
         # vir quebrado de várias formas diferentes - por exemplo, podem vir
         # apenas pedaços de um quadro, ou um pedaço de quadro seguido de um
         # pedaço de outro, ou vários quadros de uma vez só.
-        pass
+
+        # Esse método recebe do SO os dados dos bytes que estão sendo lidos da linha serial
+        # Deve-se extrair o datagrama e chamar self.callback
+        # Acumular em um buffer tudo que é recebido até conseguir separar um quadro
+        # Espera-se o fim de um quadro, ou seja, 0xC0
+
+        self.fluxo += dados #acumulando
+        
+        while self.fluxo.count(b'\xc0') != 0:
+            datagrama, self.fluxo = self.fluxo.split(b'\xc0', 1)
+            if len(datagrama) != 0:
+                datagrama = datagrama.replace(b'\xdb\xdd', b'\xdb')
+                datagrama = datagrama.replace(b'\xdb\xdc', b'\xc0')
+                try:
+                    self.callback(datagrama)
+                except:
+                    # ignora a exceção, mas mostra na tela
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    # faça aqui a limpeza necessária para garantir que não vão sobrar
+                    # pedaços do datagrama em nenhum buffer mantido por você
+                    pass
